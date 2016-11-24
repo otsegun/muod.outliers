@@ -427,23 +427,12 @@ sanitize_data <- function(data){
   }))
 }
 
-###
-# Main function to obtain outliers using the Mood algorithm
-###
-#' @export
+#' @ export
 
-getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
-                          , method=c("rcpp", "classic", "normal", "old")
-                          , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
-                          , slope=2, benchmark=c(1, 0, 1), plotCutoff=F) {
-                          #, slope=2, benchmark=c(1, 0, 1)) {
+getMOODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+                           , method=c("rcpp", "classic", "normal", "old")
+                           , benchmark=c(1, 0, 1)) {
   method <- match.arg(method)
-  outl.method <- match.arg(outl.method)
-  outl.type <- c("shape", "amplitude", "magnitude")
-  
-  data <- sanitize_data(data)
-  
-  # get index values
   if( method == "rcpp" ){
     pre.indices <- computeMoodIndices.rcpp(data, n, nGroups)
   }else if( method == "classic" ){
@@ -452,10 +441,23 @@ getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
     pre.indices <- computeMoodIndices(data, n, nGroups)
   }else if( method == "old" ){
     pre.indices <- computeMoodsIndices.old(data, n, nGroups)
+  } else {
+    stop("not a valid MOOD method")
   }
   # apply benchmark
-  indices <- abs(as.matrix(pre.indices - matrix(benchmark, nrow(pre.indices), 3, byrow = T)))
-  # compute outliers cutoff
+  abs(as.matrix(pre.indices - matrix(benchmark, nrow(pre.indices), 3, byrow = T)))
+}
+
+
+#' @export
+
+getOutliersFromIndices <- function(indices
+                                   , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
+                                   , slope=2
+                                   , plotCutoff=FALSE) {
+  outl.method <- match.arg(outl.method)
+  outl.type <- c("shape", "amplitude", "magnitude")
+  
   sapply(outl.type, function(outl.name, plot=F) {
     # sort the curve
     metric <- sort(indices[,outl.name])
@@ -468,5 +470,27 @@ getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
     outl <- which(indices[,outl.name] > cutoff)
     outl[order(indices[outl,outl.name], decreasing=T)]
   }, plot=plotCutoff, simplify=F, USE.NAMES=T)
+}
+
+
+###
+# Main function to obtain outliers using the Mood algorithm
+###
+#' @export
+
+getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+                          , method=c("rcpp", "classic", "normal", "old")
+                          , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
+                          , slope=2, benchmark=c(1, 0, 1), plotCutoff=F) {
+                          #, slope=2, benchmark=c(1, 0, 1)) {
+  method <- match.arg(method)
+  outl.method <- match.arg(outl.method)
+  
+  data <- sanitize_data(data)
+  
+  # get mood indices
+  indices <- getMOODindices(data, n, nGroups, method, benchmark)
+  # compute outliers cutoff
+  getOutliersFromIndices(indices, outl.method, slope, plotCutoff)
 }
 

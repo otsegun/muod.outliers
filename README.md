@@ -12,6 +12,9 @@ data(mtcars)
 
 data <- as.matrix(mtcars)
 options("mc.cores"=4) # Let's use 4 cores
+
+# This is the only function to call
+## it expects a numeric matrix as first parameter
 outliers <- getOutliers(t(data), slope=1)
 
 ylim <- range(data)
