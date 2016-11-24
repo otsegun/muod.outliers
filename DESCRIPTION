@@ -10,6 +10,8 @@ Imports:
     Rcpp (>= 0.12.7)
 LinkingTo: Rcpp
 NeedsCompilation: yes
-Suggests: knitr,
+Suggests:
+    knitr,
     rmarkdown,
     RUnit
+RoxygenNote: 5.0.1

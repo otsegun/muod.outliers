@@ -11,6 +11,10 @@
 # version: 0.9
 #
 
+#' @useDynLib mood
+#' @importFrom Rcpp sourceCpp
+#' @import parallel
+
 #library("parallel") # mclapply(); options("mc.cores")
 #library("R/RcppExports.R")
 
@@ -400,7 +404,6 @@ computeMoodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption
 #   -Scalable, parallel
 #   -Low memory consumption (=> more scalable)
 #
-#' @import parallel
 
 computeMoodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)){
   # compute the column splits/partition for parallel processing
@@ -427,7 +430,19 @@ sanitize_data <- function(data){
   }))
 }
 
-#' @ export
+
+#' Given a numeric matrix, compute the MOOD indices
+#' 
+#' @param data The numeric matrix from whose columns the indices will be computed
+#' @param method The MOOD implementation to use
+#' @return A data.frame with the MOOD indices, namely \code{shape}, \code{magnitude}, \code{amplitude}
+#' @examples
+#' data(mtcars)
+#' 
+#' my.data <- as.matrix(mtcars)
+#' indices <- getMOODindices(t(mtcars))
+#' tail(sapply(indices, sort)) # possible outliers
+#' @export
 
 getMOODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                            , method=c("rcpp", "classic", "normal", "old")
@@ -445,11 +460,11 @@ getMOODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores",
     stop("not a valid MOOD method")
   }
   # apply benchmark
-  abs(as.matrix(pre.indices - matrix(benchmark, nrow(pre.indices), 3, byrow = T)))
+  abs(as.data.frame(pre.indices - matrix(benchmark, nrow(pre.indices), 3, byrow = T)))
 }
 
 
-#' @export
+# Given the MOOD indices, compute the outliers
 
 getOutliersFromIndices <- function(indices
                                    , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
@@ -473,9 +488,20 @@ getOutliersFromIndices <- function(indices
 }
 
 
-###
 # Main function to obtain outliers using the Mood algorithm
-###
+#' Compute multidimensional outliers on a numeric matrix
+#'
+#' @param data A numeric matrix to detect outliers on its columns
+#' @param method The method to compute the MOOD indices
+#' @param outl.method The method to choose the outliers among the indices
+#' @param slope The slope threshold when \code{outl.method = "deriv*"}
+#' @return A list of outliers, namely \code{shape}, \code{magnitude}, \code{amplitude}
+#' @examples
+#' data(mtcars)
+#' 
+#' my.data <- as.matrix(mtcars)
+#' outliers <- getOutliers(t(my.data), slope=1)
+#' outliers
 #' @export
 
 getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
