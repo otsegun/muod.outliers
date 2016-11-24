@@ -409,7 +409,7 @@ computeMoodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("m
   data.sds <- apply(data, 2, sd, na.rm=T)
   data2 <- t(t(data) - data.means) #pre computed mean-distance data
   # compute indices 
-  sourceCpp("cor_cov_blockwise.cpp") #in case
+  #sourceCpp("cor_cov_blockwise.cpp") #in case
   vectors <- do.call(rbind, mclapply(splits, meanCorLSM.rcpp
                                      , data2, data.means, data.vars, data.sds))
   vectors <- data.frame(vectors)
