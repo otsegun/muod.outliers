@@ -3,7 +3,7 @@
 # Title: MOOD algorithm (Metric Outlier Online Detection) %title might change
 # Author: Luis F. Chiroque
 # Affiliation: IMDEA Networks Institute
-# e-mail: lf.chiroque@imdea.org
+# e-mail: lf.chiroque@imdea.o
 #
 #   Algorithm originally designed by The Statistics Department \
 # at Universidad Carlos III de Madrid
@@ -11,8 +11,8 @@
 # version: 0.9
 #
 
-library("parallel") # mclapply(); options("mc.cores")
-library("Rcpp") #sourceCpp()
+#library("parallel") # mclapply(); options("mc.cores")
+#library("R/RcppExports.R")
 
 #compiling the sources; this may take a while
 #sourceCpp("../src/cor_cov_blockwise.cpp")
@@ -328,7 +328,7 @@ meanLSM.old <- function(i, mtx){
 
 # computes the 3 indices for a range of columns ($i)
 meanCorLSM.rcpp <- function(i, mtx2, means, vars, sds){
-  preOutl <- c_cov(mtx2, means, vars, sds, i[1], i[length(i)])
+  preOutl <- cor_cov_blockwise(mtx2, means, vars, sds, i[1], i[length(i)])
   preOutl[,1] <- preOutl[,1] / sds[i]
   preOutl[,2] <- means[i] - preOutl[,2]
   preOutl
@@ -400,9 +400,11 @@ computeMoodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption
 #   -Scalable, parallel
 #   -Low memory consumption (=> more scalable)
 #
+#' @import parallel
+
 computeMoodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)){
   # compute the column splits/partition for parallel processing
-  splits <- split(1:n, sort(rank(1:n) %% max(1, as.integer(n/nGroups))))
+  splits <- split(1:n, sort(1:n %% max(1, as.integer(n/nGroups))))
   # compute auxiliar support data
   data.means <- colMeans(data, na.rm=T)
   data.vars <- apply(data, 2, var, na.rm=T)
@@ -428,11 +430,13 @@ sanitize_data <- function(data){
 ###
 # Main function to obtain outliers using the Mood algorithm
 ###
+#' @export
+
 getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                           , method=c("rcpp", "classic", "normal", "old")
-                          , outl.method=c("tangent", "deriv", "deriv-enh", "deriv.old", "roc")
-                          #, slope=2, benchmark=c(1, 0, 1), plotCutoff=F) {
-                          , slope=2, benchmark=c(1, 0, 1)) {
+                          , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
+                          , slope=2, benchmark=c(1, 0, 1), plotCutoff=F) {
+                          #, slope=2, benchmark=c(1, 0, 1)) {
   method <- match.arg(method)
   outl.method <- match.arg(outl.method)
   outl.type <- c("shape", "amplitude", "magnitude")
@@ -463,6 +467,6 @@ getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
     # filter outliers
     outl <- which(indices[,outl.name] > cutoff)
     outl[order(indices[outl,outl.name], decreasing=T)]
-  }, plot=T, simplify=F, USE.NAMES=T)
+  }, plot=plotCutoff, simplify=F, USE.NAMES=T)
 }
 

@@ -1,13 +1,15 @@
-Package: mood.outliers
-Type: Package
+Package: mood
 Title: What the Package Does (Title Case)
 Version: 0.1.0
 Author: Luis F. Chiroque
 Maintainer: Luisfo Chiroque <luisfo89@gmail.com>
 Description: More about what it does (maybe more than one line)
 License: What license is it under?
-LazyData: TRUE
-Imports: 
+Repository: GitHub
+Imports:
     Rcpp (>= 0.12.7)
-LinkingTo: 
-    Rcpp
+LinkingTo: Rcpp
+NeedsCompilation: yes
+Suggests: knitr,
+    rmarkdown,
+    RUnit

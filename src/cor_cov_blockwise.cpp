@@ -51,7 +51,7 @@ inline NumericMatrix c_cov_helper(const NumericMatrix& mat, const int rstart, co
 }
 
 // [[Rcpp::export]]
-NumericMatrix c_cov(NumericMatrix mat
+NumericMatrix cor_cov_blockwise(NumericMatrix mat
   , NumericVector means, NumericVector vars, NumericVector sds
   , int c_ini, int c_end) {
   return c_cov_helper(mat, 0, mat.nrow(), means, vars, sds, c_ini-1, c_end-1);
