@@ -15,11 +15,70 @@ library("parallel") # mclapply(); options("mc.cores")
 library("Rcpp") #sourceCpp()
 
 #compiling the sources; this may take a while
-sourceCpp("../src/cor_cov_blockwise.cpp")
+#sourceCpp("../src/cor_cov_blockwise.cpp")
 
 #
 # auxiliar functions for indices cuttoff method
 #
+
+# from hot-spots paper
+# source: http://www.nature.com/articles/srep05276
+find.tangent.X.intercept.orig <- function(x, y, newx=x[which.max(diff(y))+1], plot=F){
+  spl <- smooth.spline(y ~ x)
+  #newx <- x[which.max(diff(y))+1] # which.max(x)
+  pred0 <- predict(spl, x=newx, deriv=0)
+  pred1 <- predict(spl, x=newx, deriv=1)
+
+  #slope correction
+  pred1$y <- max(pred1$y, 1.5)
+
+  y.intercept <- pred0$y - (pred1$y*newx)
+  x.intercept <- -y.intercept/pred1$y
+
+  if( plot ) {
+    plot(x, y, type="l", ylim=c(0,max(y)))
+    abline(h=0, col=8)
+    lines(spl, col=2) # spline
+    points(pred0, col=2, pch=19) # point to predict tangent 
+    lines(x, y.intercept + pred1$y*x, col=3) # tangent (1st deriv. of spline at newx)
+    points(x.intercept, 0, col=3, pch=19) # x intercept
+  }
+  x.intercept
+}
+
+find.tangent.X.intercept <- function(x, y, which.x=which.max(diff(y))+1, plot=F){
+  spl <- smooth.spline(y ~ x)
+  #which.x <- which.max(diff(y))+1 # which.max(x)
+  newx.0 <- x[which.min(diff(diff(y)))]
+  newx.1 <- mean(x[c(which.x-1, which.x)], na.rm=TRUE)
+  pred0 <- predict(spl, x=newx.0, deriv=0)
+  pred1 <- predict(spl, x=newx.1, deriv=1)
+
+  #slope correction
+  pred1$y <- max(pred1$y, 1.5)
+
+  y.intercept <- pred0$y - (pred1$y*newx.0)
+  x.intercept <- -y.intercept/pred1$y
+
+  if( plot ) {
+    plot(x, y, type="l", ylim=c(0,max(y)))
+    abline(h=0, col=8)
+    lines(spl, col=2) # spline
+    points(pred0, col=2, pch=19) # point to predict tangent 
+    lines(x, y.intercept + pred1$y*x, col=3) # tangent (1st deriv. of spline at newx)
+    points(x.intercept, 0, col=3, pch=19) # x intercept
+  }
+  x.intercept
+}
+
+compute_tangent_cutoff <- function(metric, plot=F){
+  cpoint <- find.tangent.X.intercept(seq(0,1,length=length(metric))
+                                   , metric
+                                   #, newx = newx
+                                   , plot = plot)
+  ceiling(cpoint * length(metric))
+}
+
 
 compute_exp_elbow.last <- function(metric, base=2, exp=2
                               , exp.limit=max(3, ceiling(log(sqrt(length(metric))))+1)
@@ -168,13 +227,15 @@ getFurtherPoint <- function(curve)
 ###
 # Compute indices cutoff to get outliers
 ###
-getOutlierCutoff <- function(curve, method=c("deriv", "deriv-enh", "deriv.old", "roc")
+getOutlierCutoff <- function(curve, method=c("tangent", "deriv", "deriv-enh", "deriv.old", "roc")
                               , slope=slope, curveName="", plot=FALSE){
   method <- match.arg(method)
   
   curve.seq <- seq(1 / length(curve), 1, by = 1 / length(curve))
   
-  if( method == "roc" ){ #compute the furthest point between the extreme points
+  if( method == "tangent" ){
+    which_best <- compute_tangent_cutoff(curve, plot = plot)
+  } else if( method == "roc" ){ #compute the furthest point between the extreme points
     which_best <- getFurtherPoint(curve)
   }else if( method == "deriv" ){ # compute elbow point using 1st derivative
     #curve.norm2 <- curve / sqrt(sum(curve^2)) # norm-2
@@ -369,7 +430,7 @@ sanitize_data <- function(data){
 ###
 getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                           , method=c("rcpp", "classic", "normal", "old")
-                          , outl.method=c("deriv", "deriv-enh", "deriv.old", "roc")
+                          , outl.method=c("tangent", "deriv", "deriv-enh", "deriv.old", "roc")
                           #, slope=2, benchmark=c(1, 0, 1), plotCutoff=F) {
                           , slope=2, benchmark=c(1, 0, 1)) {
   method <- match.arg(method)
@@ -400,8 +461,8 @@ getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                                , curveName=outl.name
                                , plot=plot)
     # filter outliers
-    outl <- which(indices[,outl.name] >= cutoff)
+    outl <- which(indices[,outl.name] > cutoff)
     outl[order(indices[outl,outl.name], decreasing=T)]
-  }, plot=F, simplify=F, USE.NAMES=T)
+  }, plot=T, simplify=F, USE.NAMES=T)
 }
 
