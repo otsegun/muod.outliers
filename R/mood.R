@@ -15,7 +15,7 @@
 #' @importFrom Rcpp sourceCpp
 #' @import parallel
 
-#library("parallel") # mclapply(); options("mc.cores")
+#library("parallel") # makeCluster(), stopCluster(), parLapply(); options("mc.cores")
 #library("R/RcppExports.R")
 
 #compiling the sources; this may take a while
@@ -344,15 +344,16 @@ meanCorLSM.rcpp <- function(i, mtx2, means, vars, sds){
 # Features:
 #   -Scalable, parallel
 #
-computeMoodIndices.old <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)){
+computeMoodIndices.old <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+                                   , parClus){
   # compute the column splits/partition for parallel processing
-  splits <- split(1:n, sort(rank(1:n) %% max(1, as.integer(n/nGroups))))
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
   # auxiliar vars
   data.means <- colMeans(data, na.rm=T)
   data.vars <- apply(data, 2, var, na.rm=T)
   # compute the outlier values
-  shape <- do.call(c, mclapply(splits, meanCor, data))
-  pMean <- do.call(rbind, mclapply(splits, meanLSM, data, data.means, data.vars))
+  shape <- do.call(c, parLapply(parClus, splits, meanCor, data))
+  pMean <- do.call(rbind, parLapply(parClus, splits, meanLSM, data, data.means, data.vars))
   # set the result column names
   colnames(pMean) <- c("magnitude", "amplitude") # (b, a) from  y = ax + b
   
@@ -364,15 +365,16 @@ computeMoodIndices.old <- function(data, n=ncol(data), nGroups=n / getOption("mc
 # Features:
 #   -Scalable, parallel
 #
-computeMoodIndices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)){
+computeMoodIndices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+                               , parClus){
   # compute the column splits/partition for parallel processing
-  splits <- split(1:n, sort(rank(1:n) %% max(1, as.integer(n/nGroups))))
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
   # compute auxiliar support data
   data.means <- colMeans(data, na.rm=T)
   data.vars <- apply(data, 2, var, na.rm=T)
   data.sds <- apply(data, 2, sd, na.rm=T)
   # compute Outliers
-  vectors <- do.call(rbind, mclapply(splits, meanCorLSM, data, data.means, data.vars, data.sds))
+  vectors <- do.call(rbind, parLapply(parClus, splits, meanCorLSM, data, data.means, data.vars, data.sds))
   # alternative version using a different routine 'meanCorLSM.new'
   #vectors <- do.call(rbind, mclapply(splits, meanCorLSM.new, data, data.means, data.vars, data.sds))
 
@@ -386,12 +388,13 @@ computeMoodIndices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cor
 # Features:
 #   -Scalable, parallel
 #
-computeMoodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)){
+computeMoodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+                                       , parClus){
   # compute the column splits/partition for parallel processing
-  splits <- split(1:n, sort(rank(1:n) %% max(1, as.integer(n/nGroups))))
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
   # compute the outlier values
-  shape <- do.call(c, mclapply(splits, meanCor, data))
-  pMean <- do.call(rbind, mclapply(splits, meanLSM.old, data))
+  shape <- do.call(c, parLapply(parClus, splits, meanCor, data))
+  pMean <- do.call(rbind, parLapply(parClus, splits, meanLSM.old, data))
   # set the result column names
   colnames(pMean) <- c("magnitude", "amplitude") # (b, a) from  y = ax + b
 
@@ -405,9 +408,10 @@ computeMoodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption
 #   -Low memory consumption (=> more scalable)
 #
 
-computeMoodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)){
+computeMoodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+                                    , parClus){
   # compute the column splits/partition for parallel processing
-  splits <- split(1:n, sort(1:n %% max(1, as.integer(n/nGroups))))
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
   # compute auxiliar support data
   data.means <- colMeans(data, na.rm=T)
   data.vars <- apply(data, 2, var, na.rm=T)
@@ -415,7 +419,7 @@ computeMoodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("m
   data2 <- t(t(data) - data.means) #pre computed mean-distance data
   # compute indices 
   #sourceCpp("cor_cov_blockwise.cpp") #in case
-  vectors <- do.call(rbind, mclapply(splits, meanCorLSM.rcpp
+  vectors <- do.call(rbind, parLapply(parClus, splits, meanCorLSM.rcpp
                                      , data2, data.means, data.vars, data.sds))
   vectors <- data.frame(vectors)
   colnames(vectors) <- c("shape", "magnitude", "amplitude")
@@ -446,19 +450,23 @@ sanitize_data <- function(data){
 
 getMOODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                            , method=c("rcpp", "classic", "normal", "old")
-                           , benchmark=c(1, 0, 1)) {
+                           , benchmark=c(1, 0, 1)
+                           , parClus) {
   method <- match.arg(method)
+  innerCluster <- missing(parClus)
+  if (innerCluster) parClus <- makeCluster(getOption("mc.cores", 1))
   if( method == "rcpp" ){
-    pre.indices <- computeMoodIndices.rcpp(data, n, nGroups)
+    pre.indices <- computeMoodIndices.rcpp(data, n, nGroups, parClus)
   }else if( method == "classic" ){
-    pre.indices <- computeMoodIndices.classic(data, n, nGroups)
+    pre.indices <- computeMoodIndices.classic(data, n, nGroups, parClus)
   }else if( method == "normal" ){
-    pre.indices <- computeMoodIndices(data, n, nGroups)
+    pre.indices <- computeMoodIndices(data, n, nGroups, parClus)
   }else if( method == "old" ){
-    pre.indices <- computeMoodsIndices.old(data, n, nGroups)
+    pre.indices <- computeMoodIndices.old(data, n, nGroups, parClus)
   } else {
     stop("not a valid MOOD method")
   }
+  if (innerCluster) stopCluster(parClus)
   # apply benchmark
   abs(as.data.frame(pre.indices - matrix(benchmark, nrow(pre.indices), 3, byrow = T)))
 }
@@ -506,6 +514,7 @@ getOutliersFromIndices <- function(indices
 
 getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                           , method=c("rcpp", "classic", "normal", "old")
+                          , parClus
                           , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
                           , slope=2, benchmark=c(1, 0, 1), plotCutoff=F) {
                           #, slope=2, benchmark=c(1, 0, 1)) {
@@ -515,7 +524,7 @@ getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
   data <- sanitize_data(data)
   
   # get mood indices
-  indices <- getMOODindices(data, n, nGroups, method, benchmark)
+  indices <- getMOODindices(data, n, nGroups, method, benchmark, parClus)
   # compute outliers cutoff
   getOutliersFromIndices(indices, outl.method, slope, plotCutoff)
 }

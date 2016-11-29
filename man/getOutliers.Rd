@@ -5,7 +5,7 @@
 \title{Compute multidimensional outliers on a numeric matrix}
 \usage{
 getOutliers(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
-  method = c("rcpp", "classic", "normal", "old"),
+  method = c("rcpp", "classic", "normal", "old"), parClus,
   outl.method = c("deriv.old", "deriv-enh", "deriv", "roc", "tangent"),
   slope = 2, benchmark = c(1, 0, 1), plotCutoff = F)
 }

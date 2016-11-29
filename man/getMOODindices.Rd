@@ -5,7 +5,8 @@
 \title{Given a numeric matrix, compute the MOOD indices}
 \usage{
 getMOODindices(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
-  method = c("rcpp", "classic", "normal", "old"), benchmark = c(1, 0, 1))
+  method = c("rcpp", "classic", "normal", "old"), benchmark = c(1, 0, 1),
+  parClus)
 }
 \arguments{
 \item{data}{The numeric matrix from whose columns the indices will be computed}
