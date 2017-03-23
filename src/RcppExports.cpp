@@ -7,7 +7,7 @@ using namespace Rcpp;
 
 // cor_cov_blockwise
 NumericMatrix cor_cov_blockwise(NumericMatrix mat, NumericVector means, NumericVector vars, NumericVector sds, int c_ini, int c_end);
-RcppExport SEXP mood_cor_cov_blockwise(SEXP matSEXP, SEXP meansSEXP, SEXP varsSEXP, SEXP sdsSEXP, SEXP c_iniSEXP, SEXP c_endSEXP) {
+RcppExport SEXP muod_cor_cov_blockwise(SEXP matSEXP, SEXP meansSEXP, SEXP varsSEXP, SEXP sdsSEXP, SEXP c_iniSEXP, SEXP c_endSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;

@@ -1,9 +1,9 @@
 
 #
-# Title: MOOD algorithm (Metric Outlier Online Detection) %title might change
+# Title: MUOD algorithm (Massive Unsupervised Outliers Detection)
 # Author: Luis F. Chiroque
 # Affiliation: IMDEA Networks Institute
-# e-mail: lf.chiroque@imdea.o
+# e-mail: lf.chiroque@imdea.org
 #
 #   Algorithm originally designed by The Statistics Department \
 # at Universidad Carlos III de Madrid
@@ -11,7 +11,7 @@
 # version: 0.9
 #
 
-#' @useDynLib mood
+#' @useDynLib muod
 #' @importFrom Rcpp sourceCpp
 #' @import parallel
 
@@ -270,7 +270,7 @@ getOutlierCutoff <- function(curve, method=c("tangent", "deriv", "deriv-enh", "d
 
 
 ###
-# Mood algorithm implementations
+# MUOD algorithm implementations
 ###
 
 # computes the 3 indices for a range of columns ($i)
@@ -344,7 +344,7 @@ meanCorLSM.rcpp <- function(i, mtx2, means, vars, sds){
 # Features:
 #   -Scalable, parallel
 #
-computeMoodIndices.old <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+computeMuodIndices.old <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                                    , parClus){
   # compute the column splits/partition for parallel processing
   splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
@@ -365,7 +365,7 @@ computeMoodIndices.old <- function(data, n=ncol(data), nGroups=n / getOption("mc
 # Features:
 #   -Scalable, parallel
 #
-computeMoodIndices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+computeMuodIndices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                                , parClus){
   # compute the column splits/partition for parallel processing
   splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
@@ -388,7 +388,7 @@ computeMoodIndices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cor
 # Features:
 #   -Scalable, parallel
 #
-computeMoodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+computeMuodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                                        , parClus){
   # compute the column splits/partition for parallel processing
   splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
@@ -408,7 +408,7 @@ computeMoodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption
 #   -Low memory consumption (=> more scalable)
 #
 
-computeMoodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+computeMuodIndices.rcpp <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                                     , parClus){
   # compute the column splits/partition for parallel processing
   splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
@@ -435,20 +435,20 @@ sanitize_data <- function(data){
 }
 
 
-#' Given a numeric matrix, compute the MOOD indices
+#' Given a numeric matrix, compute the MUOD indices
 #' 
 #' @param data The numeric matrix from whose columns the indices will be computed
-#' @param method The MOOD implementation to use
-#' @return A data.frame with the MOOD indices, namely \code{shape}, \code{magnitude}, \code{amplitude}
+#' @param method The MUOD implementation to use
+#' @return A data.frame with the MUOD indices, namely \code{shape}, \code{magnitude}, \code{amplitude}
 #' @examples
 #' data(mtcars)
 #' 
 #' my.data <- as.matrix(mtcars)
-#' indices <- getMOODindices(t(mtcars))
+#' indices <- getMUODindices(t(mtcars))
 #' tail(sapply(indices, sort)) # possible outliers
 #' @export
 
-getMOODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
+getMUODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                            , method=c("rcpp", "classic", "normal", "old")
                            , benchmark=c(1, 0, 1)
                            , parClus) {
@@ -456,15 +456,15 @@ getMOODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores",
   innerCluster <- missing(parClus)
   if (innerCluster) parClus <- makeCluster(getOption("mc.cores", 1))
   if( method == "rcpp" ){
-    pre.indices <- computeMoodIndices.rcpp(data, n, nGroups, parClus)
+    pre.indices <- computeMuodIndices.rcpp(data, n, nGroups, parClus)
   }else if( method == "classic" ){
-    pre.indices <- computeMoodIndices.classic(data, n, nGroups, parClus)
+    pre.indices <- computeMuodIndices.classic(data, n, nGroups, parClus)
   }else if( method == "normal" ){
-    pre.indices <- computeMoodIndices(data, n, nGroups, parClus)
+    pre.indices <- computeMuodIndices(data, n, nGroups, parClus)
   }else if( method == "old" ){
-    pre.indices <- computeMoodIndices.old(data, n, nGroups, parClus)
+    pre.indices <- computeMuodIndices.old(data, n, nGroups, parClus)
   } else {
-    stop("not a valid MOOD method")
+    stop("not a valid MUOD method")
   }
   if (innerCluster) stopCluster(parClus)
   # apply benchmark
@@ -472,7 +472,7 @@ getMOODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores",
 }
 
 
-# Given the MOOD indices, compute the outliers
+# Given the MUOD indices, compute the outliers
 
 getOutliersFromIndices <- function(indices
                                    , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
@@ -496,11 +496,11 @@ getOutliersFromIndices <- function(indices
 }
 
 
-# Main function to obtain outliers using the Mood algorithm
+# Main function to obtain outliers using the Muod algorithm
 #' Compute multidimensional outliers on a numeric matrix
 #'
 #' @param data A numeric matrix to detect outliers on its columns
-#' @param method The method to compute the MOOD indices
+#' @param method The method to compute the MUOD indices
 #' @param outl.method The method to choose the outliers among the indices
 #' @param slope The slope threshold when \code{outl.method = "deriv*"}
 #' @return A list of outliers, namely \code{shape}, \code{magnitude}, \code{amplitude}
@@ -523,8 +523,8 @@ getOutliers <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
   
   data <- sanitize_data(data)
   
-  # get mood indices
-  indices <- getMOODindices(data, n, nGroups, method, benchmark, parClus)
+  # get muod indices
+  indices <- getMUODindices(data, n, nGroups, method, benchmark, parClus)
   # compute outliers cutoff
   getOutliersFromIndices(indices, outl.method, slope, plotCutoff)
 }

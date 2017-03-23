@@ -1,12 +1,12 @@
-# MOOD
-The R implementation of MOOD (outliers)
+# MUOD
+The R implementation of MUOD (Massive Unsupervised Outliers Detection)
 
 ## Example usage with `mtcars`
 
 ```r
-#install.packages("/path/to/mood.outiers.git/", repos=NULL, type="source")
-devtools::install_github("luisfo/mood.outliers")
-library(mood)
+install.packages("/path/to/muod.outiers.git/", repos=NULL, type="source")
+#devtools::install_github("luisfo/muod.outliers")
+library(muod)
 
 data(mtcars)
 data <- as.matrix(mtcars)
@@ -34,7 +34,7 @@ apply(data[outliers$magnitude,], 1, lines, col="green", lwd=2)
 
 ### Alternative use with a local parallel threads cluster
 ```r
-library(mood)
+library(muod)
 library(parallel)
 
 # configure
