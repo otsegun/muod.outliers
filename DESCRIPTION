@@ -1,16 +1,17 @@
 Package: muod
 Title: What the Package Does (Title Case)
-Version: 0.1.0
+Version: 0.1.1
 Author: Arturo Azcorra, Luis F. Chiroque, Rubén Cuevas,
     Antonio Fernández Anta, Henry Laniado, Rosa E. Lillo,
     Juan Romo, Carlo Sguera
-Maintainer: Luisfo Chiroque <luisfo89@gmail.com>
+Maintainer: Luis F. (Luisfo) Chiroque <luisfo89@gmail.com>
 Description: More about what it does (maybe more than one line)
 License: What license is it under?
 Repository: GitHub
 Imports:
     Rcpp (>= 0.12.7)
 LinkingTo: Rcpp
+Encoding: UTF-8
 NeedsCompilation: yes
 Suggests:
     knitr,
