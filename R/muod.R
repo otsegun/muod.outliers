@@ -231,8 +231,8 @@ getFurtherPoint <- function(curve)
 ###
 # Compute indices cutoff to get outliers
 ###
-getOutlierCutoff <- function(curve, method=c("tangent", "deriv", "deriv-enh", "deriv.old", "roc")
-                              , slope=slope, curveName="", plot=FALSE){
+getOutlierCutoff <- function(curve, method=c("boxplot", "tangent", "deriv", "deriv-enh", "deriv.old", "roc")
+                             , slope=slope, curveName="", plot=FALSE){
   method <- match.arg(method)
   
   curve.seq <- seq(1 / length(curve), 1, by = 1 / length(curve))
@@ -256,6 +256,9 @@ getOutlierCutoff <- function(curve, method=c("tangent", "deriv", "deriv-enh", "d
     elbow.point <- compute_exp_elbow.last(curve.norm2, slope=slope, plot=plot) # normalized curve as param
     metric.seq <- seq(1 / length(curve), 1, by = 1 / length(curve))
     which_best <- min(which(metric.seq > elbow.point), length(curve)+1)
+  } else if(method == "boxplot"){
+    box.stats <- boxplot.stats(curve)
+    which_best <- which( curve == box.stats$stats[5])
   }
   elbow.point <- curve.seq[which_best]
   cutoff <- curve[which_best]
@@ -300,12 +303,49 @@ meanCorLSM <- function(i, mtx, means, vars, sds){
   t(preOutl)
 }
 
+meanCorLSM.fast <- function(i, mtx, mtx_ref, ref_mean, ref_var, ref_sds, means, sds){
+  tmp <- cov(mtx[,i], mtx_ref, use="pairwise.complete.obs")
+  amplitude  <-  tmp/ref_var
+  magnitude <- means[i] - (amplitude * ref_mean)
+  shape <- tmp/ref_sds/sds[i]
+  cbind(shape, magnitude, amplitude)
+}
+
+# computes the 3 indices for a range of columns ($i)
+meanCorLSM.semifast <- function(i, mtx, mtx_ref, ref_mean, ref_var, ref_sds, means, sds){
+  preOutl <- apply(cov(mtx_ref, mtx[,i], use="pairwise.complete.obs"), 2
+                   , function(col) {
+                     tmp <- col / ref_var
+                     c("shape"=mean(col / ref_sds, na.rm=T) #PRECOMPUTED
+                       , "magnitude"=mean(tmp * ref_mean, na.rm=T) # PRECOMPUTED beta0; b, from y=ax+b
+                       , "amplitude"=mean(tmp, na.rm=T)) #beta1; a, from y=ax+b
+                   }
+  )
+  preOutl[1,] <- preOutl[1,] / sds[i] # shape; ~cor()
+  preOutl[2,] <- means[i] - preOutl[2,] # beta0; b = y - ax
+  t(preOutl)
+}
+
+
+
 # computes the LS mean coefficients for a range of columns ($i) [magnitude, amplitude]
 # Linear Algebra method
 # source: http://stats.stackexchange.com/questions/22718/what-is-the-difference-between-linear-regression-on-y-with-x-and-x-with-y
 meanLSM <- function(i, mtx, means, vars){
   beta.1 <- apply(cov(mtx[,i], mtx, use="pairwise.complete.obs"), 1, function(col) col / vars)
   beta.0 <- means[i] - colMeans(apply(beta.1, 2, function(col) col * means))
+  cbind(beta.0, colMeans(beta.1))
+}
+
+meanLSM.fast <- function(i, mtx, mtx_ref, ref_mean, ref_var, means){
+  beta.1 <- cov(mtx[,i], mtx_ref, use="pairwise.complete.obs")/ref_var
+  beta.0 <- means[i] - (beta.1 * ref_mean)
+  cbind(beta.0, beta.1)
+}
+
+meanLSM.semifast <- function(i, mtx, mtx_ref, ref_mean, ref_var, means){
+  beta.1 <- apply(cov(mtx[,i], mtx_ref, use="pairwise.complete.obs"), 1, function(x) x/ref_var)
+  beta.0 <- means[i] - colMeans(apply(beta.1, 2, function(col) col * ref_mean))
   cbind(beta.0, colMeans(beta.1))
 }
 
@@ -318,6 +358,16 @@ meanCor <- function(i, mtx){
 }
 
 
+meanCor.fast <- function(i, mtx, mtx_ref){
+  cor(mtx_ref, mtx[,i], use = "pairwise.complete.obs")
+}
+
+meanCor.semifast <- function(i, mtx, mtx_ref){
+  colMeans(cor(mtx_ref, mtx[,i], use = "pairwise.complete.obs"), na.rm=T)
+}
+
+
+
 # computes the LS mean coefficients for a range of columns ($i) [magnitude, amplitude]
 # lm() method
 meanLSM.old <- function(i, mtx){
@@ -328,6 +378,15 @@ meanLSM.old <- function(i, mtx){
           rowMeans(apply(mtx, 2, function(x) lm(mtx[,i]~x)$coeff), na.rm=T),
           nrow = length(i), ncol = 2, byrow = T
         )
+}
+
+meanLSM.fast.classic <- function(i, mtx, mtx_ref){
+  t(lm(mtx[,i] ~ mtx_ref)$coeff)
+}
+
+meanLSM.semifast.classic <- function(i, mtx, mtx_ref){
+  matrix(rowMeans(apply(mtx_ref, 2, function(x) lm(mtx[,i]~x)$coeff), na.rm=T),
+         nrow = length(i), ncol = 2, byrow = T)
 }
 
 # computes the 3 indices for a range of columns ($i)
@@ -360,6 +419,59 @@ computeMuodIndices.old <- function(data, n=ncol(data), nGroups=n / getOption("mc
   data.frame(shape, pMean)
 }
 
+
+# fast muod with a reference observation
+# Version using Linear Algebra method for intercept & slope. cor computed normally.
+# Features:
+#   -Scalable, parallel
+# ----updates by Segun
+computeMuodIndices.fast.old <- function(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
+                                        parClus){
+  # compute reference observation (median of each var)
+  data.ref <- apply(data, 1, median) 
+  data.ref.mean <- mean(data.ref, na.rm=T)
+  data.ref.var <- var(data.ref, na.rm = T)
+  # compute the column splits/partition for parallel processing
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
+  # auxiliar vars
+  data.means <- colMeans(data, na.rm=T)
+  # compute the outlier values
+  shape <- do.call(c, parLapply(parClus, splits, meanCor.fast, data, data.ref))
+  pMean <- do.call(rbind, parLapply(parClus, splits, meanLSM.fast, data, data.ref,
+                                    data.ref.mean, data.ref.var, data.means))
+  # set the result column names
+  colnames(pMean) <- c("magnitude", "amplitude") # (b, a) from  y = ax + b
+  data.frame(shape, pMean)
+}
+
+# fast muod with a reference observation
+# Version using Linear Algebra method for intercept & slope. cor computed normally.
+# Features:
+#   -Scalable, parallel
+# ----updates by Segun
+computeMuodIndices.semifast.old <- function(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
+                                            parClus, sample_prop = 0.5){
+  # sample reference observations 
+  data.ref.index <- sample(1:n, size = ceiling(sample_prop * n)) 
+  data.ref <- data[, data.ref.index]
+  # compute aux support data for ref data 
+  data.ref.mean <- colMeans(data.ref, na.rm=T)
+  data.ref.var <- apply(data.ref, 2, var, na.rm=T)
+  #data.ref.sds <- apply(data.ref, 2, sd, na.rm=T)
+  
+  # compute the column splits/partition for parallel processing
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
+  # auxiliar vars
+  data.means <- colMeans(data, na.rm=T)
+  # compute the outlier values
+  shape <- do.call(c, parLapply(parClus, splits, meanCor.semifast, data, data.ref))
+  
+  pMean <- do.call(rbind, parLapply(parClus, splits, meanLSM.semifast, data, data.ref,
+                                    data.ref.mean, data.ref.var, data.means))
+  # set the result column names
+  colnames(pMean) <- c("magnitude", "amplitude") # (b, a) from  y = ax + b
+  data.frame(shape, pMean)
+}
 #
 # Parallel full version
 # Features:
@@ -383,6 +495,73 @@ computeMuodIndices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cor
   vectors
 }
 
+
+
+# fast muod with a reference observation
+# Full parallel version using Linear Algebra method for intercept, slope and correlation. 
+# Features:
+#   -Scalable, parallel
+# ----updates by Segun
+
+computeMuodIndices.fast <- function(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
+                                    parClus){
+  # compute reference observation (median of each var)
+  data.ref <- apply(data, 1, median) 
+  data.ref.mean <- mean(data.ref, na.rm=T)
+  data.ref.var <- var(data.ref, na.rm = T)
+  data.ref.sds <- sd(data.ref, na.rm = T)
+  # compute the column splits/partition for parallel processing
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
+  # auxiliar vars
+  data.means <- colMeans(data, na.rm=T)
+  data.sds <- apply(data, 2, sd, na.rm=T)
+  # compute the outlier values
+  # compute Outliers
+  vectors <- do.call(rbind, parLapply(parClus, splits, meanCorLSM.fast, data, data.ref,
+                                      data.ref.mean, data.ref.var, data.ref.sds, data.means, data.sds))
+  # alternative version using a different routine 'meanCorLSM.new'
+  #vectors <- do.call(rbind, mclapply(splits, meanCorLSM.new, data, data.means, data.vars, data.sds))
+  
+  vectors <- data.frame(vectors)
+  colnames(vectors) <- c("shape", "magnitude", "amplitude")
+  vectors
+}
+
+
+# fast muod with a reference observation
+# Full parallel version using Linear Algebra method for intercept, slope and correlation. 
+# Features:
+#   -Scalable, parallel
+# ----updates by Segun
+
+computeMuodIndices.semifast <- function(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
+                                        parClus, sample_prop = 0.5){
+  
+  # sample reference observations 
+  data.ref.index <- sample(1:n, size = ceiling(sample_prop * n)) 
+  data.ref <- data[, data.ref.index]
+  
+  # compute aux support data for ref data 
+  data.ref.mean <- colMeans(data.ref, na.rm=T)
+  data.ref.var <- apply(data.ref, 2, var, na.rm=T)
+  data.ref.sds <- apply(data.ref, 2, sd, na.rm=T)
+  # compute the column splits/partition for parallel processing
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
+  # auxiliar vars
+  data.means <- colMeans(data, na.rm=T)
+  data.sds <- apply(data, 2, sd, na.rm=T)
+  # compute the outlier values
+  
+  vectors <- do.call(rbind, parLapply(parClus, splits, meanCorLSM.semifast, data, data.ref,
+                                      data.ref.mean, data.ref.var, data.ref.sds, data.means, data.sds))
+  # alternative version using a different routine 'meanCorLSM.new'
+  #vectors <- do.call(rbind, mclapply(splits, meanCorLSM.new, data, data.means, data.vars, data.sds))
+  
+  vectors <- data.frame(vectors)
+  colnames(vectors) <- c("shape", "magnitude", "amplitude")
+  vectors
+}
+
 #
 # Classical version using correlation & linear regression (LSM)
 # Features:
@@ -400,6 +579,50 @@ computeMuodIndices.classic <- function(data, n=ncol(data), nGroups=n / getOption
 
   data.frame(shape, pMean)
 }
+
+
+# fast muod with a reference observation (median of all variables)
+# Classical version using correlation & linear regression (LSM)
+# Features:
+#   -Scalable, parallel
+# ----updates by Segun
+
+computeMuodIndices.fast.classic <- function(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
+                                            parClus){
+  # compute reference observation (median of each var)
+  data.ref <- apply(data, 1, median) 
+  
+  #compute the outlier values
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
+  shape <- do.call(c, parLapply(parClus, splits, meanCor.fast, data, data.ref))
+  pMean <- do.call(rbind, parLapply(parClus, splits, meanLSM.fast.classic, data, data.ref))
+  # set the result column names
+  colnames(pMean) <- c("magnitude", "amplitude") # (b, a) from  y = ax + b
+  data.frame(shape, pMean)
+}
+
+
+# semifast muod with a reference sample (half of the data)
+# Classical version using correlation & linear regression (LSM)
+# Features:
+#   -Scalable, parallel
+# ----updates by Segun
+computeMuodIndices.semifast.classic <- function(data, n = ncol(data), nGroups = n/getOption("mc.cores", 1),
+                                                parClus, sample_prop = 0.5){
+  # sample reference observations 
+  data.ref.index <- sample(1:n, size = ceiling(sample_prop * n)) 
+  data.ref <- data[, data.ref.index]
+  
+  #compute the outlier values
+  splits <- parallel:::splitList(1:n, max(1, as.integer(n/nGroups)))
+  shape <- do.call(c, parLapply(parClus, splits, meanCor.semifast, data, data.ref)) # done
+  pMean <- do.call(rbind, parLapply(parClus, splits, meanLSM.semifast.classic, data, data.ref)) 
+  # set the result column names
+  colnames(pMean) <- c("magnitude", "amplitude") # (b, a) from  y = ax + b
+  data.frame(shape, pMean)
+  
+}
+
 
 #
 # Rcpp full version
@@ -451,7 +674,7 @@ sanitize_data <- function(data){
 getMUODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores", 1)
                            , method=c("rcpp", "classic", "normal", "old")
                            , benchmark=c(1, 0, 1)
-                           , parClus) {
+                           , parClus, sample_prop = 0.5) {
   method <- match.arg(method)
   innerCluster <- missing(parClus)
   if (innerCluster) parClus <- makeCluster(getOption("mc.cores", 1))
@@ -463,6 +686,22 @@ getMUODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores",
     pre.indices <- computeMuodIndices(data, n, nGroups, parClus)
   }else if( method == "old" ){
     pre.indices <- computeMuodIndices.old(data, n, nGroups, parClus)
+  } else if(method == "fast") {
+    pre.indices <- computeMuodIndices.fast(data, n, nGroups, parClus)
+    
+  } else if(method == "semifast"){
+    pre.indices <- computeMuodIndices.semifast(data, n, nGroups, parClus, sample_prop)
+  } else if(method == "fast_classic"){
+    pre.indices <- computeMuodIndices.fast.classic(data, n, nGroups, parClus)
+    
+  } else if(method == "semifast_classic")(
+    pre.indices <- computeMuodIndices.semifast.classic(data, n, nGroups, parClus, sample_prop)
+    
+  ) else if(method == "fast_old"){
+    pre.indices <- computeMuodIndices.fast.old(data, n, nGroups, parClus)
+    
+  } else if(method == "semifast_old"){
+    pre.indices <- computeMuodIndices.semifast.old(data, n, nGroups, parClus, sample_prop)
   } else {
     stop("not a valid MUOD method")
   }
@@ -471,11 +710,10 @@ getMUODindices <- function(data, n=ncol(data), nGroups=n / getOption("mc.cores",
   abs(as.data.frame(pre.indices - matrix(benchmark, nrow(pre.indices), 3, byrow = T)))
 }
 
-
 # Given the MUOD indices, compute the outliers
 
 getOutliersFromIndices <- function(indices
-                                   , outl.method=c("deriv.old", "deriv-enh", "deriv", "roc", "tangent")
+                                   , outl.method=c("boxplot", "deriv.old", "deriv-enh", "deriv", "roc", "tangent")
                                    , slope=2
                                    , plotCutoff=FALSE) {
   outl.method <- match.arg(outl.method)
@@ -485,17 +723,17 @@ getOutliersFromIndices <- function(indices
     # sort the curve
     metric <- sort(indices[,outl.name])
     # compute elbow point
+    
     cutoff <- getOutlierCutoff(metric, method=outl.method
                                , slope=slope
                                , curveName=outl.name
                                , plot=plot)
     # filter outliers
     outl <- which(indices[,outl.name] > cutoff)
+    
     outl[order(indices[outl,outl.name], decreasing=T)]
   }, plot=plotCutoff, simplify=F, USE.NAMES=T)
 }
-
-
 # Main function to obtain outliers using the Muod algorithm
 #' Compute multidimensional outliers on a numeric matrix
 #'
